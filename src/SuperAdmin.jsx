@@ -433,11 +433,35 @@ export default function SuperAdmin() {
               </div>
             </div>
 
-            <div className="fg"><label className="fl">Trial Berakhir</label>
-              <input className="fi" type="date" value={selectedOrg.trialEndsAt||""} onChange={e=>setSelectedOrg({...selectedOrg,trialEndsAt:e.target.value})}/>
+            <div className="fr">
+              <div className="fg"><label className="fl">Trial Berakhir</label>
+                <input className="fi" type="date" value={selectedOrg.trialEndsAt||""} onChange={e=>setSelectedOrg({...selectedOrg,trialEndsAt:e.target.value})}/>
+              </div>
+              <div className="fg"><label className="fl">Langganan Berakhir</label>
+                <input className="fi" type="date" value={(selectedOrg.subscriptionEndsAt||"").split("T")[0]} onChange={e=>setSelectedOrg({...selectedOrg,subscriptionEndsAt:e.target.value ? new Date(e.target.value).toISOString() : ""})}/>
+              </div>
             </div>
 
-            <div style={{padding:12,background:T.bg2,borderRadius:8,marginTop:8}}>
+            {/* Quick-set subscription duration */}
+            <div className="fg">
+              <label className="fl">Set Cepat Durasi Langganan</label>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {[{l:"+1 Bulan",d:30},{l:"+3 Bulan",d:90},{l:"+6 Bulan",d:180},{l:"+1 Tahun",d:365}].map(opt=>(
+                  <button key={opt.l} className="btn btn-o" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>{
+                    const end=new Date();end.setDate(end.getDate()+opt.d);
+                    setSelectedOrg({...selectedOrg,subscriptionEndsAt:end.toISOString(),planStatus:"active"});
+                  }}>{opt.l}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Manual payment notes */}
+            <div className="fg">
+              <label className="fl">Catatan Pembayaran Manual</label>
+              <textarea className="fi" rows={2} placeholder="Contoh: Transfer BCA Rp 250.000 tgl 25 Jun 2026 - 3 bulan Pro" value={selectedOrg.paymentNote||""} onChange={e=>setSelectedOrg({...selectedOrg,paymentNote:e.target.value})} style={{resize:"vertical",fontFamily:"inherit"}}/>
+            </div>
+
+            <div style={{padding:12,background:T.bg2,borderRadius:8,marginTop:4}}>
               <div style={{fontSize:11,color:T.text3,marginBottom:4}}>Estimasi Revenue</div>
               <div style={{fontSize:18,fontWeight:800,color:T.green}}>{fmtRp((PLAN_PRICES[selectedOrg.plan||"free"]||0) * (orgEmployees[selectedOrg.id]||0))}<span style={{fontSize:11,color:T.text3,fontWeight:400}}> /bulan</span></div>
             </div>
@@ -446,7 +470,7 @@ export default function SuperAdmin() {
             <button className="btn btn-r" onClick={()=>{setDeleteConfirm(selectedOrg);setSelectedOrg(null);}}><I n="trash" s={12}/> Hapus</button>
             <div style={{flex:1}}/>
             <button className="btn btn-o" onClick={()=>setSelectedOrg(null)}>Batal</button>
-            <button className="btn btn-p" onClick={()=>updateOrg(selectedOrg.id,{plan:selectedOrg.plan||"free",planStatus:selectedOrg.planStatus||"active",trialEndsAt:selectedOrg.trialEndsAt||null})}>Simpan</button>
+            <button className="btn btn-p" onClick={()=>updateOrg(selectedOrg.id,{plan:selectedOrg.plan||"free",planStatus:selectedOrg.planStatus||"active",trialEndsAt:selectedOrg.trialEndsAt||null,subscriptionEndsAt:selectedOrg.subscriptionEndsAt||null,paymentNote:selectedOrg.paymentNote||""})}>Simpan</button>
           </div>
         </div></div>
       )}
