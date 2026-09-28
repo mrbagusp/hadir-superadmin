@@ -171,6 +171,7 @@ const SEGMENTS=[
   {id:"all",label:"Semua"},
   {id:"new7",label:"Daftar ≤7 hari",sub:"Sapa & bantu setup",test:(o,m)=>{const d=daysSince(orgCreated(o));return d!=null&&d<=7;}},
   {id:"trialSoon",label:"Trial ≤7 hari lagi",sub:"Tawarkan upgrade",test:(o)=>effStatus(o)==="trial"&&daysUntil(o.trialEndsAt)<=7},
+  {id:"subSoon",label:"Langganan ≤7 hari lagi",sub:"Ingatkan perpanjangan",test:(o)=>(o.plan||"free")!=="free"&&effStatus(o)==="active"&&o.subscriptionEndsAt&&daysUntil(o.subscriptionEndsAt)<=7},
   {id:"trialOver",label:"Trial habis / expired",sub:"Ajak lanjut berbayar",test:(o)=>["trial_over","expired"].includes(effStatus(o))},
   {id:"noAtt",label:"Belum pernah absen",sub:"Belum dipakai sama sekali",test:(o,m)=>m&&m.loaded&&!m.lastAtt&&!m.attErr&&(daysSince(orgCreated(o))??99)>=1},
   {id:"dormant",label:"Tidak aktif 14+ hari",sub:"Pernah pakai, lalu berhenti",test:(o,m)=>m&&m.lastAtt&&daysSince(m.lastAtt)>=14},
@@ -183,6 +184,7 @@ const waMessage=(o,c,m)=>{
   const lines=[`Halo ${name}, saya dari tim HadirHR 👋`,`Terima kasih sudah mendaftarkan *${o.name||"perusahaan Anda"}* di HadirHR.`];
   const st=effStatus(o);
   if(st==="trial"&&o.trialEndsAt) lines.push(`Masa trial plan ${PLAN_NAMES[o.plan]||o.plan} berakhir ${fmtDate(o.trialEndsAt)}. Kalau mau lanjut, kami bisa bantu proses upgrade-nya.`);
+  else if(st==="active"&&o.subscriptionEndsAt&&(o.plan||"free")!=="free"&&daysUntil(o.subscriptionEndsAt)<=7) lines.push(`Langganan plan ${PLAN_NAMES[o.plan]||o.plan} akan berakhir ${fmtDate(o.subscriptionEndsAt)}. Kami bisa bantu proses perpanjangannya supaya absensi tidak terputus.`);
   else if(st==="trial_over"||st==="expired") lines.push(`Masa trial sudah berakhir. Kalau ingin lanjut memakai fitur lengkap, kami bisa bantu aktifkan kembali.`);
   else if(m&&m.loaded&&!m.lastAtt) lines.push(`Kami lihat absensi belum mulai dipakai. Mau kami bantu setup lokasi kantor & undang karyawan? Cukup 10 menit.`);
   else if(m&&m.loaded&&m.empCount<=1) lines.push(`Sudah siap menambahkan karyawan? Kami bisa bantu kalau ada kendala.`);
@@ -307,7 +309,7 @@ export default function SuperAdmin() {
     const m = {}; SEGMENTS.forEach(s => { m[s.id] = s.test ? orgs.filter(o => s.test(o, meta[o.id], contactOf(o))).length : orgs.length; }); return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgs, meta, usersById]);
-  const followUpTotal = (segCount.trialSoon||0) + (segCount.trialOver||0) + (segCount.noAtt||0);
+  const followUpTotal = (segCount.trialSoon||0) + (segCount.subSoon||0) + (segCount.trialOver||0) + (segCount.noAtt||0);
 
   const sortedOrgs = useMemo(() => {
     const arr = [...orgs];
@@ -350,9 +352,9 @@ export default function SuperAdmin() {
   const openWa = (o) => { const c = contactOf(o); setWaDraft({ org: o, contact: c, text: waMessage(o, c, meta[o.id]) }); };
 
   const exportCsv = () => {
-    const head = ["Nama Organisasi","Org ID","Nama Admin","Email","No. WhatsApp","Plan","Status","Karyawan","Absen Terakhir","Absen 30 Hari","Terdaftar","Trial Berakhir","Revenue/Bulan"];
+    const head = ["Nama Organisasi","Org ID","Nama Admin","Email","No. WhatsApp","Plan","Status","Karyawan","Absen Terakhir","Absen 30 Hari","Terdaftar","Trial Berakhir","Langganan Berakhir","Catatan Pembayaran","Revenue/Bulan"];
     const rows = filteredOrgs.map(o => { const c = contactOf(o); const m = meta[o.id] || {};
-      return [o.name||"", o.id, c.name, c.email, c.phone ? "+"+c.phone : (c.phoneRaw||""), PLAN_NAMES[o.plan||"free"], STATUS_NAMES[effStatus(o)]||effStatus(o), m.empCount ?? "", m.lastAtt || "", m.att30 ?? "", orgCreated(o) ? localDStr(orgCreated(o)) : "", o.trialEndsAt ? String(o.trialEndsAt).slice(0,10) : "", calcRevenue(o)]; });
+      return [o.name||"", o.id, c.name, c.email, c.phone ? "+"+c.phone : (c.phoneRaw||""), PLAN_NAMES[o.plan||"free"], STATUS_NAMES[effStatus(o)]||effStatus(o), m.empCount ?? "", m.lastAtt || "", m.att30 ?? "", orgCreated(o) ? localDStr(orgCreated(o)) : "", o.trialEndsAt ? String(o.trialEndsAt).slice(0,10) : "", o.subscriptionEndsAt ? String(o.subscriptionEndsAt).slice(0,10) : "", o.paymentNote || "", calcRevenue(o)]; });
     const esc = v => { const s = String(v ?? ""); return /[",\n;]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
     const csv = "﻿" + [head, ...rows].map(r => r.map(esc).join(",")).join("\n");
     const a = document.createElement("a");
@@ -429,7 +431,7 @@ export default function SuperAdmin() {
       <td><div style={{fontWeight:600}}>{o.name || <i style={{color:T.text3}}>(tanpa nama)</i>}</div><div style={{fontSize:10,color:T.text3}}>{o.id}</div></td>
       <td><Contact o={o}/></td>
       <td><PlanBadge o={o}/></td>
-      <td><StatusBadge o={o}/>{effStatus(o)==="trial"&&o.trialEndsAt&&<div style={{fontSize:10,color:T.text3,marginTop:3}}>s/d {fmtDate(o.trialEndsAt)}</div>}</td>
+      <td><StatusBadge o={o}/>{effStatus(o)==="trial"&&o.trialEndsAt&&<div style={{fontSize:10,color:T.text3,marginTop:3}}>s/d {fmtDate(o.trialEndsAt)}</div>}{effStatus(o)==="active"&&o.subscriptionEndsAt&&(o.plan||"free")!=="free"&&<div style={{fontSize:10,color:daysUntil(o.subscriptionEndsAt)<=7?T.warn:T.text3,marginTop:3}}>langganan s/d {fmtDate(o.subscriptionEndsAt)}</div>}</td>
       <td style={{fontWeight:600}}>{meta[o.id] ? empCount(o.id) : "…"}</td>
       <td><Activity o={o}/></td>
       <td><div style={{fontSize:11.5}}>{fmtDate(orgCreated(o))}</div><div style={{fontSize:10,color:T.text3}}>{ago(orgCreated(o))}</div></td>
@@ -658,6 +660,8 @@ export default function SuperAdmin() {
               <div><span>Absen terakhir</span><b>{m.attErr ? "—" : m.loaded ? (m.lastAtt ? `${fmtDate(m.lastAtt)} (${ago(m.lastAtt)})` : "Belum pernah") : "…"}</b></div>
               <div><span>Absen 30 hari terakhir</span><b>{m.attErr ? "—" : m.loaded ? (m.att30 ?? 0) : "…"}</b></div>
               <div><span>Lokasi kantor diset</span><b>{(o.settings?.locations||[]).length ? `${o.settings.locations.length} lokasi` : "Belum"}</b></div>
+              {o.subscriptionEndsAt && <div><span>Langganan berakhir</span><b style={{color:daysUntil(o.subscriptionEndsAt)<=7?T.warn:T.text}}>{fmtDate(o.subscriptionEndsAt)} ({daysUntil(o.subscriptionEndsAt)>=0?`${daysUntil(o.subscriptionEndsAt)} hari lagi`:"sudah lewat"})</b></div>}
+              {o.paymentNote && <div style={{gridColumn:"1/-1"}}><span>Catatan pembayaran</span><b style={{fontWeight:500,whiteSpace:"pre-wrap"}}>{o.paymentNote}</b></div>}
             </div>
 
             {m.emps && m.emps.length > 0 && <>
@@ -680,10 +684,35 @@ export default function SuperAdmin() {
                 </select>
               </div>
             </div>
-            <div className="fg"><label className="fl">Trial Berakhir</label>
-              <input className="fi" type="date" value={selectedOrg.trialEndsAt ? String(selectedOrg.trialEndsAt).slice(0,10) : ""} onChange={e=>setSelectedOrg({...selectedOrg,trialEndsAt:e.target.value})}/>
+            <div className="fr">
+              <div className="fg"><label className="fl">Trial Berakhir</label>
+                <input className="fi" type="date" value={selectedOrg.trialEndsAt ? String(selectedOrg.trialEndsAt).slice(0,10) : ""} onChange={e=>setSelectedOrg({...selectedOrg,trialEndsAt:e.target.value})}/>
+              </div>
+              <div className="fg"><label className="fl">Langganan Berakhir</label>
+                <input className="fi" type="date" value={(selectedOrg.subscriptionEndsAt||"").split("T")[0]} onChange={e=>setSelectedOrg({...selectedOrg,subscriptionEndsAt:e.target.value ? new Date(e.target.value).toISOString() : ""})}/>
+              </div>
             </div>
-            <div style={{padding:12,background:T.bg2,borderRadius:8,marginTop:8}}>
+
+            {/* Quick-set subscription duration */}
+            <div className="fg">
+              <label className="fl">Set Cepat Durasi Langganan</label>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {[{l:"+1 Bulan",d:30},{l:"+3 Bulan",d:90},{l:"+6 Bulan",d:180},{l:"+1 Tahun",d:365}].map(opt=>(
+                  <button key={opt.l} className="btn btn-o" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>{
+                    const end=new Date();end.setDate(end.getDate()+opt.d);
+                    setSelectedOrg({...selectedOrg,subscriptionEndsAt:end.toISOString(),planStatus:"active"});
+                  }}>{opt.l}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Manual payment notes */}
+            <div className="fg">
+              <label className="fl">Catatan Pembayaran Manual</label>
+              <textarea className="fi" rows={2} placeholder="Contoh: Transfer BCA Rp 250.000 tgl 25 Jun 2026 - 3 bulan Pro" value={selectedOrg.paymentNote||""} onChange={e=>setSelectedOrg({...selectedOrg,paymentNote:e.target.value})} style={{resize:"vertical",fontFamily:"inherit",minHeight:60}}/>
+            </div>
+
+            <div style={{padding:12,background:T.bg2,borderRadius:8,marginTop:4}}>
               <div style={{fontSize:11,color:T.text3,marginBottom:4}}>Estimasi Revenue (kalau aktif berbayar)</div>
               <div style={{fontSize:18,fontWeight:800,color:T.green}}>{fmtRp((PLAN_PRICES[selectedOrg.plan||"free"]||0) * empCount(o.id))}<span style={{fontSize:11,color:T.text3,fontWeight:400}}> /bulan</span></div>
             </div>
@@ -692,7 +721,7 @@ export default function SuperAdmin() {
             <button className="btn btn-r" onClick={()=>{setDeleteConfirm(o);setSelectedOrg(null);}}><I n="trash" s={12}/> Hapus</button>
             <div style={{flex:1}}/>
             <button className="btn btn-o" onClick={()=>setSelectedOrg(null)}>Tutup</button>
-            <button className="btn btn-p" onClick={()=>updateOrg(o.id,{plan:selectedOrg.plan||"free",planStatus:selectedOrg.planStatus||"active",trialEndsAt:selectedOrg.trialEndsAt ? new Date(String(selectedOrg.trialEndsAt).slice(0,10)+"T23:59:59").toISOString() : null})}>Simpan Plan</button>
+            <button className="btn btn-p" onClick={()=>updateOrg(o.id,{plan:selectedOrg.plan||"free",planStatus:selectedOrg.planStatus||"active",trialEndsAt:selectedOrg.trialEndsAt ? new Date(String(selectedOrg.trialEndsAt).slice(0,10)+"T23:59:59").toISOString() : null,subscriptionEndsAt:selectedOrg.subscriptionEndsAt||null,paymentNote:selectedOrg.paymentNote||""})}>Simpan Plan</button>
           </div>
         </div></div>
         );
